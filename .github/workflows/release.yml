@@ -1,0 +1,53 @@
+name: Release
+
+# Push a tag like v0.1.1 (see `make release`) to build and publish a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Older glibc so the .deb / AppImage run on more distros.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches app version
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          [ "${GITHUB_REF_NAME}" = "v${VER}" ] || { echo "tag ${GITHUB_REF_NAME} != package.json v${VER}"; exit 1; }
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: easy-vial ${{ github.ref_name }}
+          releaseBody: "Install: `sudo apt install ./easy-vial_*_amd64.deb`, or run the AppImage."
+          releaseDraft: false
+          args: --bundles deb,appimage
